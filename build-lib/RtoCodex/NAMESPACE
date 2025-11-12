@@ -1,2 +1,2 @@
 useDynLib(RtoCodex, .registration = TRUE)
-export(add1)
+export(add1tester)

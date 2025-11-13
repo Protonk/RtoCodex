@@ -14,4 +14,4 @@ SystemRequirements: C/C++ compiler, Fortran, make; OpenMP (optional)
 RoxygenNote: 7.3.2
 Author: Adam Hyland [aut, cre]
 Maintainer: Adam Hyland <you@example.com>
-Built: R 4.4.1; aarch64-apple-darwin20; 2025-11-11 23:45:07 UTC; unix
+Built: R 4.4.1; aarch64-apple-darwin20; 2025-11-13 18:12:05 UTC; unix

@@ -3,4 +3,6 @@
 ^\.DS_Store$
 ^\.Rproj\.user$
 ^README\.md$
+^AGENTS\.md$
 ^.*\.Rproj$
+^\.vscode/*$

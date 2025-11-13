@@ -1,9 +1,18 @@
+# R and RStudio files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+RtoCodex.Rproj
+
+# MacOS rubbish
+.DS_Store
+
+# Compilation artifacts
 src/*.o
 src/*.so
 src/*.dll
-RtoCodex.Rproj
-.DS_Store
+
+# Local build + harness artifacts (run_matrix, devtools, etc.)
+build-lib/
+artifacts/

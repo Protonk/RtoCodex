@@ -190,16 +190,24 @@ derive_expectations <- function(combo_row, profile, skip_tests) {
   } else {
     "pass"
   }
-  tests_notes <- if (skip_tests) {
-    "User requested --skip-tests."
+  tests_notes <- character()
+  if (skip_tests) {
+    tests_notes <- c(tests_notes, "User requested --skip-tests.")
   } else if (tests_label == "skip") {
-    "Tests depend on a successful build."
+    tests_notes <- c(tests_notes, "Tests depend on a successful build.")
+  } else if (combo_row[["USE_DEVTOOLS"]] == 1) {
+    tests_notes <- c(tests_notes, "Tests use devtools::test().")
+    if (combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1) {
+      tests_notes <- c(tests_notes, "pkgbuild.has_compiler forced TRUE.")
+    } else {
+      tests_notes <- c(tests_notes, "pkgbuild will probe toolchain (processx).")
+    }
   } else {
-    "Execute testthat suite."
+    tests_notes <- c(tests_notes, "Execute testthat suite.")
   }
   list(
     install = list(label = install_label, notes = if (length(install_notes) == 0) "None" else paste(install_notes, collapse = " | ")),
-    tests = list(label = tests_label, notes = tests_notes)
+    tests = list(label = tests_label, notes = if (length(tests_notes) == 0) "None" else paste(tests_notes, collapse = " | "))
   )
 }
 
@@ -216,7 +224,38 @@ run_install <- function(lib_path, env_vars, log_path) {
   )
 }
 
-run_tests <- function(lib_path, log_path) {
+set_env_vars <- function(vars) {
+  if (length(vars) == 0) {
+    return(function() invisible(NULL))
+  }
+  vars <- lapply(vars, as.character)
+  old <- Sys.getenv(names(vars), unset = NA_character_)
+  do.call(Sys.setenv, vars)
+  function() {
+    restore <- old[!is.na(old)]
+    if (length(restore) > 0) {
+      restore_list <- as.list(restore)
+      names(restore_list) <- names(restore)
+      do.call(Sys.setenv, restore_list)
+    }
+    to_unset <- names(old)[is.na(old)]
+    if (length(to_unset) > 0) {
+      Sys.unsetenv(to_unset)
+    }
+  }
+}
+
+set_option_overrides <- function(opts) {
+  if (length(opts) == 0) {
+    return(function() invisible(NULL))
+  }
+  old <- options(opts)
+  function() {
+    options(old)
+  }
+}
+
+run_tests <- function(lib_path, log_path, combo_row) {
   dir.create(dirname(log_path), recursive = TRUE, showWarnings = FALSE)
   con <- file(log_path, open = "wt")
   on.exit({
@@ -227,13 +266,32 @@ run_tests <- function(lib_path, log_path) {
   sink(con)
   sink(con, type = "message")
   exit_code <- 0L
+  use_devtools <- isTRUE(combo_row[["USE_DEVTOOLS"]] == 1)
+  assume_pkgbuild <- isTRUE(combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1)
+  driver <- if (use_devtools) "devtools::test()" else "testthat::test_dir()"
   tryCatch({
-    suppressPackageStartupMessages(library("RtoCodex", lib.loc = lib_path, character.only = TRUE))
-    on.exit(detach("package:RtoCodex", unload = TRUE), add = TRUE)
-    testthat::test_dir("tests/testthat", reporter = "summary")
+    if (use_devtools) {
+      if (!requireNamespace("devtools", quietly = TRUE)) {
+        stop("devtools package is required for USE_DEVTOOLS=1 combos.")
+      }
+      env_reset <- set_env_vars(list(
+        USE_CPP20 = combo_row[["USE_CPP20"]],
+        USE_OPENMP = combo_row[["USE_OPENMP"]]
+      ))
+      on.exit(env_reset(), add = TRUE)
+      if (assume_pkgbuild) {
+        opt_reset <- set_option_overrides(list(pkgbuild.has_compiler = TRUE))
+        on.exit(opt_reset(), add = TRUE)
+      }
+      devtools::test(pkg = ".", reporter = "summary")
+    } else {
+      suppressPackageStartupMessages(library("RtoCodex", lib.loc = lib_path, character.only = TRUE))
+      on.exit(detach("package:RtoCodex", unload = TRUE), add = TRUE)
+      testthat::test_dir("tests/testthat", reporter = "summary")
+    }
   }, error = function(e) {
     exit_code <<- 1L
-    message("Test run failed: ", conditionMessage(e))
+    message(sprintf("[%s] Test run failed: %s", driver, conditionMessage(e)))
   })
   exit_code
 }
@@ -312,7 +370,13 @@ main <- function() {
   profile <- build_env_profile()
   summarize_profile(profile)
 
-  combos <- expand.grid(USE_CPP20 = c(0, 1), USE_OPENMP = c(0, 1))
+  combos <- expand.grid(
+    USE_CPP20 = c(0, 1),
+    USE_OPENMP = c(0, 1),
+    USE_DEVTOOLS = c(0, 1),
+    PKGBUILD_ASSUME_TOOLS = c(0, 1),
+    stringsAsFactors = FALSE
+  )
   combo_names <- vapply(seq_len(nrow(combos)), function(i) {
     format_combo_name(combos[i, , drop = FALSE])
   }, character(1))
@@ -332,8 +396,9 @@ main <- function() {
 
   for (i in seq_len(nrow(combos))) {
     combo <- combos[i, , drop = FALSE]
+    combo_vals <- as.list(combo[1, , drop = FALSE])
     combo_name <- combo_names[i]
-    expectations <- derive_expectations(combo, profile, opts$skip_tests)
+    expectations <- derive_expectations(combo_vals, profile, opts$skip_tests)
 
     log_line("INFO", "")
     rule()
@@ -353,8 +418,10 @@ main <- function() {
     dir.create(lib_path, recursive = TRUE, showWarnings = FALSE)
 
     env_vars <- c(
-      sprintf("USE_CPP20=%s", combo[["USE_CPP20"]]),
-      sprintf("USE_OPENMP=%s", combo[["USE_OPENMP"]])
+      sprintf("USE_CPP20=%s", combo_vals[["USE_CPP20"]]),
+      sprintf("USE_OPENMP=%s", combo_vals[["USE_OPENMP"]]),
+      sprintf("USE_DEVTOOLS=%s", combo_vals[["USE_DEVTOOLS"]]),
+      sprintf("PKGBUILD_ASSUME_TOOLS=%s", combo_vals[["PKGBUILD_ASSUME_TOOLS"]])
     )
 
     log_line("INFO", "  - install   -> start (log: %s)", install_log_rel)
@@ -373,8 +440,9 @@ main <- function() {
     test_note <- "Tests were not executed."
     run_tests_flag <- install_status == "passed" && !opts$skip_tests
     if (run_tests_flag) {
-      log_line("INFO", "  - tests     -> start (log: %s)", test_log_rel)
-      test_exit <- run_tests(lib_path, test_log)
+      driver_label <- if (combo_vals[["USE_DEVTOOLS"]] == 1) "devtools" else "testthat"
+      log_line("INFO", "  - tests[%s] -> start (log: %s)", driver_label, test_log_rel)
+      test_exit <- run_tests(lib_path, test_log, combo_vals)
       test_status <- if (test_exit == 0L) "passed" else "failed"
       test_note <- if (test_status == "passed") {
         "Tests completed."
@@ -398,7 +466,7 @@ main <- function() {
       test_note
     )
 
-    write_session_info(session_log, combo_name, combo)
+    write_session_info(session_log, combo_name, combo_vals)
 
     combo_results[[i]] <- data.frame(
       combo = combo_name,

@@ -28,10 +28,8 @@ Local environmental behavior and access is left for the agent (you) to determine
 ## Scope and intent
 
 - Preserve the intent of this project: it is a test harness, not a production package. Code and tests may be written specifically to surface environment-dependent behavior (e.g., compilation issues) rather than to “fix” everything.
-- When adding new experiments, prefer:
-  - Small, focused C/C++ or R snippets under `src/` and `R/`.
-  - Corresponding tests under `tests/testthat/` that clearly describe the behavior or discrepancy being investigated.
 - Every source file that you touch should start with brief, file-level comments that explain the purpose, relevant tooling, and produced artifacts; assume the audience is a motivated first-year CS student who is learning how the harness works.
+- New experiments may be at any level of abstraction, from different build flags to tests of R or C++ edge cases in project code. The goal is to surface unexpected 
 
 ## How to work in this repo
 
@@ -65,3 +63,4 @@ When you record a test or event narrative:
    - **Sequence:** Bullet list in the order *you* observed the clues; focus on user-visible observations, not hidden reasoning.
    - **Locus:** Bullets for **Trigger**, **Diagnosis**, **Remediation**, **Follow-up** (if no action, say “None.”).
 4. Keep the tone factual and reproducible so another agent can replay the steps without re-reading the chat log.
+5. Revise event narratives by adding to follow-up. If revisions become dramatic, append a new 3 section summary (as detailed in Step 3) at the end. Only one new summary is needed, it can be overwritten indefinitely. 

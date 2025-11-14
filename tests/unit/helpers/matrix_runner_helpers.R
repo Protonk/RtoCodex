@@ -1,18 +1,15 @@
-# Matrix runner test helper: loads scripts/run_matrix.R into a fresh environment
-# without executing its CLI entrypoint and provides small stubbing utilities.
+# tests/unit/helpers/matrix_runner_helpers.R loads scripts/run_matrix.R into an
+# isolated environment so unit tests can exercise its helpers without invoking
+# the CLI entrypoint.
 
 locate_run_matrix_script <- function() {
-  # Tests execute from different roots (devtools vs R CMD check), so probe
-  # the common layouts before giving up.
+  root <- pkg_root()
   candidates <- c(
-    testthat::test_path("..", "..", "scripts", "run_matrix.R"),
-    testthat::test_path("..", "..", "RtoCodex", "scripts", "run_matrix.R")
+    file.path(root, "scripts", "run_matrix.R"),
+    file.path(root, "RtoCodex", "scripts", "run_matrix.R")
   )
   for (candidate in candidates) {
-    candidate_abs <- tryCatch(
-      normalizePath(candidate, mustWork = FALSE),
-      error = function(e) candidate
-    )
+    candidate_abs <- tryCatch(normalizePath(candidate, mustWork = FALSE), error = function(e) candidate)
     if (file.exists(candidate_abs)) {
       return(candidate_abs)
     }
@@ -26,18 +23,34 @@ load_run_matrix_env <- function() {
   keep <- vapply(
     expressions,
     function(expr) {
-      !(is.call(expr) &&
-        identical(expr[[1L]], as.name("main")) &&
-        length(expr) == 1L)
+      !(is.call(expr) && identical(expr[[1L]], as.name("main")) && length(expr) == 1L)
     },
     logical(1)
   )
-  expressions <- expressions[keep]
   env <- new.env(parent = baseenv())
+  repo_root <- normalizePath(file.path(dirname(script_path), ".."), mustWork = TRUE)
   owd <- getwd()
   on.exit(setwd(owd), add = TRUE)
-  for (expr in expressions) {
+  setwd(repo_root)
+  stub_cmd_args <- function(trailingOnly = FALSE) {
+    if (isTRUE(trailingOnly)) {
+      return(character())
+    }
+    c(sprintf("--file=%s", script_path))
+  }
+  assign("commandArgs", stub_cmd_args, envir = env)
+  assign(
+    "source",
+    function(..., local = FALSE) {
+      base::source(..., local = env)
+    },
+    envir = env
+  )
+  for (expr in expressions[keep]) {
     eval(expr, envir = env)
+  }
+  if (exists("source", envir = env, inherits = FALSE)) {
+    rm("source", envir = env)
   }
   env
 }
@@ -61,6 +74,5 @@ with_mocked_command_args <- function(env, args, code) {
       rm("commandArgs", envir = env)
     }
   }, add = TRUE)
-  result <- force(code)
-  result
+  force(code)
 }

@@ -6,11 +6,16 @@
 MATRIX_SCRIPT := scripts/run_matrix.R
 MATRIX_LIB ?= build-lib/matrix
 MATRIX_ARTIFACTS ?= artifacts/matrix
+TEST_LIB ?= build-lib/unit
+FUZZ_SCRIPT := scripts/run_fuzz.R
+FUZZ_LIB ?= build-lib/fuzz
+FUZZ_ARTIFACTS ?= artifacts/fuzz
 CAP_ARTIFACTS ?= artifacts/caps
 PROBE_DIR ?= probes
 PROBE_RUNNER ?= scripts/run_probes.R
 
-.PHONY: matrix matrix-container check clean-matrix \
+.PHONY: matrix matrix-container check clean-matrix fuzz fuzz-once fuzz-clean \
+	test \
 	cap_sysctl_kern_boottime cap_cxx20_flags cap_openmp_flags \
 	caps caps-summary
 
@@ -20,11 +25,25 @@ matrix:
 matrix-container:
 	./scripts/run_container_matrix.sh $(ARGS)
 
+test:
+	mkdir -p $(TEST_LIB)
+	R CMD INSTALL --preclean -l $(TEST_LIB) .
+	Rscript tests/run_unit_tests.R --lib=$(TEST_LIB) --driver=cli
+
 check:
-	Rscript -e "devtools::check()"
+	R CMD check --no-manual RtoCodex
 
 clean-matrix:
 	rm -rf $(MATRIX_LIB) $(MATRIX_ARTIFACTS)
+
+fuzz:
+	Rscript $(FUZZ_SCRIPT) --lib=$(FUZZ_LIB) --artifacts=$(FUZZ_ARTIFACTS) $(ARGS)
+
+fuzz-once:
+	Rscript $(FUZZ_SCRIPT) --lib=$(FUZZ_LIB) --artifacts=$(FUZZ_ARTIFACTS) --n=1 $(ARGS)
+
+fuzz-clean:
+	rm -rf $(FUZZ_LIB) $(FUZZ_ARTIFACTS)
 
 # Capability probes help catalogue sandbox quirks without entangling package tests.
 cap_sysctl_kern_boottime:

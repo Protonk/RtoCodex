@@ -44,34 +44,6 @@ fi
 $SUDO apt-get update
 $SUDO apt-get install -y build-essential gfortran r-base r-base-dev
 export CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"
-Rscript - <<'RSCRIPT'
-repos <- Sys.getenv("CRAN")
-if (!nzchar(repos)) {
-  stop("CRAN repository mirror was not configured via the CRAN environment variable.")
-}
-options(repos = c(CRAN = repos))
-pkgs <- c("devtools", "testthat")
-message("Ensuring required R packages are installed: ", paste(pkgs, collapse = ", "))
-installed <- vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)
-if (!all(installed)) {
-  cores <- parallel::detectCores()
-  if (is.na(cores) || cores < 1L) {
-    cores <- 1L
-  }
-  install.packages(pkgs[!installed], Ncpus = cores)
-}
-installed <- vapply(pkgs, requireNamespace, logical(1), quietly = TRUE)
-if (all(installed)) {
-  message("Verified required R packages: ", paste(pkgs, collapse = ", "))
-} else {
-  message(
-    "Failed to install required R packages: ",
-    paste(pkgs[!installed], collapse = ", "),
-    "\nThe setup script cannot proceed without network access to the specified CRAN mirror."
-  )
-  quit(status = 1L)
-}
-RSCRIPT
 Rscript scripts/run_matrix.R __MATRIX_ARGS__
 INNER
 

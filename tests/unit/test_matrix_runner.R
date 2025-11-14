@@ -1,7 +1,7 @@
-# Matrix runner tests: verify scripts/run_matrix.R behaviors so CLI refactors
-# keep argument parsing, expectation logic, and artifact bookkeeping intact.
+# tests/unit/test_matrix_runner.R exercises scripts/run_matrix.R helpers so the
+# matrix harness remains stable across refactors in both the CLI and fuzz modes.
 
-test_that("matrix runner parses CLI arguments", {
+test_case("matrix runner parses CLI arguments", {
   env <- load_run_matrix_env()
   tmp_lib <- file.path(tempdir(), "matrix-lib")
   tmp_artifacts <- file.path(tempdir(), "matrix-artifacts")
@@ -15,100 +15,119 @@ test_that("matrix runner parses CLI arguments", {
     ),
     env$parse_args()
   )
-  expect_equal(opts$lib_root, tmp_lib)
-  expect_equal(opts$artifacts_root, tmp_artifacts)
-  expect_true(opts$skip_tests)
-  expect_equal(opts$filter, "USE_CPP20=1")
+  assert_equal(opts$lib_root, tmp_lib)
+  assert_equal(opts$artifacts_root, tmp_artifacts)
+  assert_true(opts$skip_tests)
+  assert_equal(opts$filter, "USE_CPP20=1")
 })
 
-test_that("matrix runner rel_path shortens repo paths", {
+test_case("matrix runner rel_path shortens repo paths", {
   env <- load_run_matrix_env()
   repo <- env$repo_root_norm
-  expect_equal(env$rel_path(repo), ".")
+  assert_equal(env$rel_path(repo), ".")
   script_path <- file.path(repo, "scripts", "run_matrix.R")
-  expect_match(env$rel_path(script_path), "^scripts/")
-  outside <- file.path(tempdir(), "totally-outside")
-  expect_equal(env$rel_path(outside), outside)
+  assert_match(env$rel_path(script_path), "^scripts/")
+  outside <- file.path(tempdir(), "rtocodex-outside")
+  assert_equal(env$rel_path(outside), outside)
 })
 
-test_that("matrix runner formats combination names predictably", {
+test_case("matrix builder spans every toggle combination", {
+  env <- load_run_matrix_env()
+  combos <- env$build_matrix()
+  expected <- expand.grid(
+    USE_CPP20 = c(0, 1),
+    USE_OPENMP = c(0, 1),
+    USE_DEVTOOLS = c(0, 1),
+    PKGBUILD_ASSUME_TOOLS = c(0, 1),
+    stringsAsFactors = FALSE
+  )
+  assert_equal(nrow(combos), 16L)
+  assert_true(identical(combos, expected))
+})
+
+test_case("matrix runner formats combination names predictably", {
   env <- load_run_matrix_env()
   combo <- data.frame(USE_OPENMP = 1, USE_CPP20 = 0)
-  expect_equal(env$format_combo_name(combo), "USE_OPENMP=1_USE_CPP20=0")
+  assert_equal(env$format_combo_name(combo), "USE_OPENMP=1_USE_CPP20=0")
   combo2 <- data.frame(USE_CPP20 = 1, USE_OPENMP = 0)
-  expect_equal(env$format_combo_name(combo2), "USE_CPP20=1_USE_OPENMP=0")
+  assert_equal(env$format_combo_name(combo2), "USE_CPP20=1_USE_OPENMP=0")
 })
 
-test_that("matrix runner derives install and test expectations", {
+test_case("matrix runner derives install and test expectations", {
   env <- load_run_matrix_env()
-  combo <- data.frame(USE_CPP20 = 1, USE_OPENMP = 1, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
+  combo <- list(USE_CPP20 = 1, USE_OPENMP = 1, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
   profile <- list(
     cpp20 = list(supported = FALSE, reason = "C++20 disabled"),
     openmp = list(state = "missing", reason = "OpenMP not in toolchain"),
     sandbox = list(kern_boottime = list(blocked = TRUE, detected = TRUE, message = "Operation not permitted"))
   )
   exp <- env$derive_expectations(combo, profile, skip_tests = FALSE)
-  expect_equal(exp$install$label, "fail")
-  expect_match(exp$install$notes, "C\\+\\+20 disabled")
-  expect_equal(exp$tests$label, "skip")
-  expect_match(exp$tests$notes, "depend on a successful build")
+  assert_equal(exp$install$label, "fail")
+  assert_match(exp$install$notes, "C\\+\\+20 disabled")
+  assert_equal(exp$tests$label, "skip")
+  assert_match(exp$tests$notes, "depend on a successful build")
 
-  combo2 <- data.frame(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 1)
+  combo2 <- list(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 1)
   exp2 <- env$derive_expectations(combo2, profile, skip_tests = TRUE)
-  expect_equal(exp2$install$label, "pass")
-  expect_equal(exp2$tests$label, "skip")
-  expect_match(exp2$tests$notes, "User requested")
+  assert_equal(exp2$install$label, "pass")
+  assert_equal(exp2$tests$label, "skip")
+  assert_match(exp2$tests$notes, "User requested")
 
-  combo3 <- data.frame(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
+  combo3 <- list(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
   exp3 <- env$derive_expectations(combo3, profile, skip_tests = FALSE)
-  expect_equal(exp3$tests$label, "fail")
-  expect_match(exp3$tests$notes, "Sandbox blocks")
-  expect_match(exp3$tests$notes, "Expect failure")
+  assert_equal(exp3$tests$label, "fail")
+  assert_match(exp3$tests$notes, "Sandbox blocks")
+  assert_match(exp3$tests$notes, "subprocess")
 
   profile_no_block <- profile
   profile_no_block$sandbox$kern_boottime$blocked <- FALSE
   exp4 <- env$derive_expectations(combo3, profile_no_block, skip_tests = FALSE)
-  expect_equal(exp4$tests$label, "pass")
-  expect_match(exp4$tests$notes, "pkgbuild will probe")
+  assert_equal(exp4$tests$label, "pass")
+  assert_match(exp4$tests$notes, "subprocess")
+
+  combo_inline <- list(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 0, PKGBUILD_ASSUME_TOOLS = 0)
+  exp_inline <- env$derive_expectations(combo_inline, profile_no_block, skip_tests = FALSE)
+  assert_equal(exp_inline$tests$label, "pass")
+  assert_match(exp_inline$tests$notes, "embedded harness")
 })
 
-test_that("matrix runner detects C++20 support signals", {
+test_case("matrix runner detects C++20 support signals", {
   env <- load_run_matrix_env()
   supported <- env$detect_cpp20_support(list(success = TRUE, value = "-std=gnu++20"))
-  expect_true(supported$supported)
-  expect_match(supported$reason, "CXX20 flags")
+  assert_true(supported$supported)
+  assert_match(supported$reason, "CXX20 flags")
 
   failure <- env$detect_cpp20_support(list(success = FALSE, value = "no compiler found"))
-  expect_false(failure$supported)
-  expect_match(failure$reason, "CXX20 unavailable")
+  assert_false(failure$supported)
+  assert_match(failure$reason, "CXX20 unavailable")
 })
 
-test_that("matrix runner classifies OpenMP probe states", {
+test_case("matrix runner classifies OpenMP probe states", {
   env <- load_run_matrix_env()
   probes_available <- list(
     list(success = FALSE, value = ""),
     list(success = TRUE, value = "-fopenmp")
   )
   available <- env$detect_openmp_support(probes_available)
-  expect_equal(available$state, "available")
-  expect_match(available$reason, "Flags")
+  assert_equal(available$state, "available")
+  assert_match(available$reason, "Flags")
 
   probes_missing <- list(
     list(success = FALSE, value = "no information in this build"),
     list(success = FALSE, value = "")
   )
   missing <- env$detect_openmp_support(probes_missing)
-  expect_equal(missing$state, "missing")
+  assert_equal(missing$state, "missing")
 
   probes_unknown <- list(
     list(success = FALSE, value = "timeout"),
     list(success = FALSE, value = "")
   )
   unknown <- env$detect_openmp_support(probes_unknown)
-  expect_equal(unknown$state, "unknown")
+  assert_equal(unknown$state, "unknown")
 })
 
-test_that("matrix runner records timeline events with expectation comparisons", {
+test_case("matrix runner records timeline events with expectation comparisons", {
   env <- load_run_matrix_env()
   store <- env$event_store()
   expectation <- list(label = "pass", notes = "None")
@@ -122,10 +141,10 @@ test_that("matrix runner records timeline events with expectation comparisons", 
     expectation = expectation,
     note = "Build completed."
   )
-  expect_equal(store$counter, 1L)
+  assert_equal(store$counter, 1L)
   event <- store$events[[1L]]
-  expect_equal(event$stage, "install")
-  expect_true(event$expectation_match)
+  assert_equal(event$stage, "install")
+  assert_true(event$expectation_match)
 
   expectation_fail <- list(label = "pass", notes = "None")
   store <- env$record_event(
@@ -139,14 +158,14 @@ test_that("matrix runner records timeline events with expectation comparisons", 
     note = "Tests exited with status 2."
   )
   event2 <- store$events[[2L]]
-  expect_false(event2$expectation_match)
-  expect_equal(event2$exit_code, 2L)
+  assert_false(event2$expectation_match)
+  assert_equal(event2$exit_code, 2L)
 })
 
-test_that("matrix runner main produces timelines and summaries with stubbed installs", {
+test_case("matrix runner main produces timelines and summaries with stubbed installs", {
   env <- load_run_matrix_env()
   tmp_lib <- file.path(tempdir(), "matrix-lib-main")
-  tmp_artifacts <- file.path(tempdir(), paste0("matrix-artifacts-", as.integer(runif(1, 1, 100000))))
+  tmp_artifacts <- file.path(tempdir(), paste0("matrix-artifacts-", as.integer(Sys.time())))
   opts <- list(
     lib_root = tmp_lib,
     artifacts_root = tmp_artifacts,
@@ -154,8 +173,6 @@ test_that("matrix runner main produces timelines and summaries with stubbed inst
     filter = NULL
   )
   env$parse_args <- function() opts
-  # Emulate a host that lacks C++20 and OpenMP tooling so expectation logic
-  # stays deterministic even without a real compiler toolchain.
   profile <- list(
     sys = list(sysname = "TestOS", release = "1.0"),
     cpp20 = list(supported = FALSE, reason = "C++20 disabled in harness"),
@@ -179,7 +196,7 @@ test_that("matrix runner main produces timelines and summaries with stubbed inst
   }
   env$run_tests <- function(lib_path, log_path, combo_row) {
     dir.create(dirname(log_path), recursive = TRUE, showWarnings = FALSE)
-    driver <- if (combo_row[["USE_DEVTOOLS"]] == 1) "devtools" else "testthat"
+    driver <- if (combo_row[["USE_DEVTOOLS"]] == 1) "subprocess" else "embedded"
     writeLines(c("fake tests", basename(lib_path), driver), log_path)
     if (combo_row[["USE_DEVTOOLS"]] == 1 && combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 0) {
       return(4L)
@@ -196,25 +213,25 @@ test_that("matrix runner main produces timelines and summaries with stubbed inst
   on.exit(unlink(c(tmp_lib, tmp_artifacts), recursive = TRUE, force = TRUE), add = TRUE)
 
   env$main()
-  expect_equal(captured_status, 1)
+  assert_equal(captured_status, 1)
 
   timeline_files <- list.files(tmp_artifacts, pattern = "^matrix_timeline_.*\\.csv$", full.names = TRUE)
   summary_files <- list.files(tmp_artifacts, pattern = "^matrix_summary_.*\\.csv$", full.names = TRUE)
-  expect_length(timeline_files, 1L)
-  expect_length(summary_files, 1L)
+  assert_length(timeline_files, 1L)
+  assert_length(summary_files, 1L)
 
   timeline <- utils::read.csv(timeline_files[[1L]], stringsAsFactors = FALSE)
   summary <- utils::read.csv(summary_files[[1L]], stringsAsFactors = FALSE)
-  expect_equal(nrow(summary), 16L)
-  expect_equal(sum(timeline$stage == "install"), 16L)
-  expect_equal(sum(timeline$stage == "tests"), 16L)
+  assert_equal(nrow(summary), 16L)
+  assert_equal(sum(timeline$stage == "install"), 16L)
+  assert_equal(sum(timeline$stage == "tests"), 16L)
 
   failing_installs <- subset(summary, grepl("USE_CPP20=1", combo))
-  expect_true(all(failing_installs$install_status == "failed"))
-  expect_true(all(failing_installs$test_status == "skipped"))
+  assert_true(all(failing_installs$install_status == "failed"))
+  assert_true(all(failing_installs$test_status == "skipped"))
 
   failing_tests_openmp <- subset(summary, grepl("USE_OPENMP=1", combo) & !grepl("USE_CPP20=1", combo))
-  expect_true(all(failing_tests_openmp$test_status == "failed"))
+  assert_true(all(failing_tests_openmp$test_status == "failed"))
   openmp_devtools_permission <- subset(
     failing_tests_openmp,
     grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo)
@@ -223,18 +240,28 @@ test_that("matrix runner main produces timelines and summaries with stubbed inst
     failing_tests_openmp,
     !(grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo))
   )
-  expect_true(all(openmp_devtools_permission$test_expected == "fail"))
-  expect_true(all(openmp_other$test_expected == "pass"))
+  assert_true(all(openmp_devtools_permission$test_expected == "fail"))
+  assert_true(all(openmp_other$test_expected == "pass"))
 
   devtools_permission <- subset(summary, grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo))
   devtools_permission <- subset(devtools_permission, !grepl("USE_CPP20=1", combo))
-  expect_true(all(devtools_permission$test_status == "failed"))
-  expect_true(all(grepl("USE_DEVTOOLS=1", devtools_permission$combo)))
-  expect_true(all(devtools_permission$test_expected == "fail"))
+  assert_true(all(devtools_permission$test_status == "failed"))
+  assert_true(all(grepl("USE_DEVTOOLS=1", devtools_permission$combo)))
+  assert_true(all(devtools_permission$test_expected == "fail"))
 
   devtools_guarded <- subset(summary, grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=1", combo))
   devtools_guarded <- subset(devtools_guarded, !grepl("USE_CPP20=1", combo))
   devtools_guarded <- subset(devtools_guarded, !grepl("USE_OPENMP=1", combo))
-  expect_true(all(devtools_guarded$test_status == "passed"))
-  expect_true(all(devtools_guarded$test_expected == "pass"))
+  assert_true(all(devtools_guarded$test_status == "passed"))
+  assert_true(all(devtools_guarded$test_expected == "pass"))
+})
+
+test_case("environment helper restores overrides", {
+  env <- load_run_matrix_env()
+  reset <- env$set_env_vars(list(RTOCODEX_TEMP_A = "alpha", RTOCODEX_TEMP_B = 2))
+  assert_equal(Sys.getenv("RTOCODEX_TEMP_A"), "alpha")
+  assert_equal(Sys.getenv("RTOCODEX_TEMP_B"), "2")
+  reset()
+  assert_equal(Sys.getenv("RTOCODEX_TEMP_A", unset = NA_character_), NA_character_)
+  assert_equal(Sys.getenv("RTOCODEX_TEMP_B", unset = NA_character_), NA_character_)
 })

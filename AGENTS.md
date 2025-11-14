@@ -34,9 +34,9 @@ Local environmental behavior and access is left for the agent (you) to determine
 
 ## How to work in this repo
 
-- Treat the project root as an R package root. Use `devtools::load_all()`, `devtools::test()`, and `devtools::check()` to run diagnostics.
+- Treat the project root as an R package root. Install into a throwaway library via `R CMD INSTALL --preclean -l build-lib/unit .`, then run `Rscript tests/run_unit_tests.R --lib=build-lib/unit` (or simply `make test`) followed by `R CMD check RtoCodex` for full diagnostics.
 - Do not rename the package or substantially change the package structure; changes should support clearer diagnostics of environment differences.
-- Never hand-edit `NAMESPACE` or the files under `man/`; regenerate them with `devtools::document()` (roxygen2) after updating roxygen comments.
+- Never hand-edit `NAMESPACE` or the files under `man/`; regenerate them with `Rscript -e \"roxygen2::roxygenize('RtoCodex')\"` after updating roxygen comments.
 - If modifying or adding tests:
   - Make the purpose explicit in test names and messages (e.g., “container vs local: compilation of X”).
   - Document any assumptions about the universal container or local toolchain in comments near the relevant code.

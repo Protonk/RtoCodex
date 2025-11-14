@@ -1,11 +1,27 @@
 # Matrix runner test helper: loads scripts/run_matrix.R into a fresh environment
 # without executing its CLI entrypoint and provides small stubbing utilities.
 
-load_run_matrix_env <- function() {
-  script_path <- normalizePath(
+locate_run_matrix_script <- function() {
+  # Tests execute from different roots (devtools vs R CMD check), so probe
+  # the common layouts before giving up.
+  candidates <- c(
     testthat::test_path("..", "..", "scripts", "run_matrix.R"),
-    mustWork = TRUE
+    testthat::test_path("..", "..", "RtoCodex", "scripts", "run_matrix.R")
   )
+  for (candidate in candidates) {
+    candidate_abs <- tryCatch(
+      normalizePath(candidate, mustWork = FALSE),
+      error = function(e) candidate
+    )
+    if (file.exists(candidate_abs)) {
+      return(candidate_abs)
+    }
+  }
+  stop("Unable to locate scripts/run_matrix.R from tests directory.")
+}
+
+load_run_matrix_env <- function() {
+  script_path <- locate_run_matrix_script()
   expressions <- parse(script_path)
   keep <- vapply(
     expressions,

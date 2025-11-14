@@ -44,7 +44,8 @@ test_that("matrix runner derives install and test expectations", {
   combo <- data.frame(USE_CPP20 = 1, USE_OPENMP = 1, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
   profile <- list(
     cpp20 = list(supported = FALSE, reason = "C++20 disabled"),
-    openmp = list(state = "missing", reason = "OpenMP not in toolchain")
+    openmp = list(state = "missing", reason = "OpenMP not in toolchain"),
+    sandbox = list(kern_boottime = list(blocked = TRUE, detected = TRUE, message = "Operation not permitted"))
   )
   exp <- env$derive_expectations(combo, profile, skip_tests = FALSE)
   expect_equal(exp$install$label, "fail")
@@ -60,8 +61,15 @@ test_that("matrix runner derives install and test expectations", {
 
   combo3 <- data.frame(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
   exp3 <- env$derive_expectations(combo3, profile, skip_tests = FALSE)
-  expect_match(exp3$tests$notes, "devtools::test")
-  expect_match(exp3$tests$notes, "pkgbuild will probe toolchain")
+  expect_equal(exp3$tests$label, "fail")
+  expect_match(exp3$tests$notes, "Sandbox blocks")
+  expect_match(exp3$tests$notes, "Expect failure")
+
+  profile_no_block <- profile
+  profile_no_block$sandbox$kern_boottime$blocked <- FALSE
+  exp4 <- env$derive_expectations(combo3, profile_no_block, skip_tests = FALSE)
+  expect_equal(exp4$tests$label, "pass")
+  expect_match(exp4$tests$notes, "pkgbuild will probe")
 })
 
 test_that("matrix runner detects C++20 support signals", {
@@ -152,6 +160,7 @@ test_that("matrix runner main produces timelines and summaries with stubbed inst
     sys = list(sysname = "TestOS", release = "1.0"),
     cpp20 = list(supported = FALSE, reason = "C++20 disabled in harness"),
     openmp = list(state = "missing", reason = "OpenMP variables absent"),
+    sandbox = list(kern_boottime = list(blocked = TRUE, detected = TRUE, message = "Operation not permitted")),
     label = "test-profile"
   )
   env$build_env_profile <- function() profile
@@ -206,11 +215,26 @@ test_that("matrix runner main produces timelines and summaries with stubbed inst
 
   failing_tests_openmp <- subset(summary, grepl("USE_OPENMP=1", combo) & !grepl("USE_CPP20=1", combo))
   expect_true(all(failing_tests_openmp$test_status == "failed"))
-  expect_true(all(failing_tests_openmp$test_expected == "pass"))
+  openmp_devtools_permission <- subset(
+    failing_tests_openmp,
+    grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo)
+  )
+  openmp_other <- subset(
+    failing_tests_openmp,
+    !(grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo))
+  )
+  expect_true(all(openmp_devtools_permission$test_expected == "fail"))
+  expect_true(all(openmp_other$test_expected == "pass"))
 
   devtools_permission <- subset(summary, grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo))
   devtools_permission <- subset(devtools_permission, !grepl("USE_CPP20=1", combo))
   expect_true(all(devtools_permission$test_status == "failed"))
   expect_true(all(grepl("USE_DEVTOOLS=1", devtools_permission$combo)))
-  expect_true(all(devtools_permission$test_expected == "pass"))
+  expect_true(all(devtools_permission$test_expected == "fail"))
+
+  devtools_guarded <- subset(summary, grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=1", combo))
+  devtools_guarded <- subset(devtools_guarded, !grepl("USE_CPP20=1", combo))
+  devtools_guarded <- subset(devtools_guarded, !grepl("USE_OPENMP=1", combo))
+  expect_true(all(devtools_guarded$test_status == "passed"))
+  expect_true(all(devtools_guarded$test_expected == "pass"))
 })

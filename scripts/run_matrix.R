@@ -142,6 +142,23 @@ detect_openmp_support <- function(openmp_probes) {
   list(state = "unknown", reason = "OpenMP support undetermined from R CMD config.")
 }
 
+detect_kern_boottime_block <- function() {
+  if (!requireNamespace("ps", quietly = TRUE)) {
+    return(list(blocked = NA, detected = FALSE, message = "ps package not available."))
+  }
+  err <- tryCatch({
+    ps::ps_boot_time()
+    NULL
+  }, error = function(e) e)
+  if (is.null(err)) {
+    return(list(blocked = FALSE, detected = TRUE, message = "ps::ps_boot_time() succeeded."))
+  }
+  msg <- conditionMessage(err)
+  blocked <- grepl("kern\\.boottime", msg, ignore.case = TRUE) &&
+    grepl("Operation not permitted|permission denied|EPERM|EACCES", msg, ignore.case = TRUE)
+  list(blocked = blocked, detected = TRUE, message = msg)
+}
+
 build_env_profile <- function() {
   sys <- Sys.info()
   config_keys <- c("CC", "CXX", "CXX17", "CXX20", "SHLIB_OPENMP_CFLAGS", "SHLIB_OPENMP_CXXFLAGS", "SHLIB_OPENMP_LDFLAGS")
@@ -149,6 +166,9 @@ build_env_profile <- function() {
   names(probes) <- config_keys
   cpp20 <- detect_cpp20_support(probes[["CXX20"]])
   openmp <- detect_openmp_support(probes[c("SHLIB_OPENMP_CFLAGS", "SHLIB_OPENMP_CXXFLAGS", "SHLIB_OPENMP_LDFLAGS")])
+  sandbox <- list(
+    kern_boottime = detect_kern_boottime_block()
+  )
   clean_label <- function(x) {
     gsub("[^[:alnum:]_\\-]+", "", x)
   }
@@ -163,6 +183,7 @@ build_env_profile <- function() {
     probes = probes,
     cpp20 = cpp20,
     openmp = openmp,
+    sandbox = sandbox,
     label = label
   )
 }
@@ -171,6 +192,15 @@ summarize_profile <- function(profile) {
   log_line("INFO", "Detected host: %s %s (%s)", profile$sys[["sysname"]], profile$sys[["release"]], profile$label)
   log_line("INFO", "  CXX20 probe: %s", profile$cpp20$reason)
   log_line("INFO", "  OpenMP probe: %s", profile$openmp$reason)
+  sandbox <- profile$sandbox$kern_boottime
+  status <- if (!isTRUE(sandbox$detected)) {
+    "not evaluated"
+  } else if (isTRUE(sandbox$blocked)) {
+    "blocked"
+  } else {
+    "ok"
+  }
+  log_line("INFO", "  kern.boottime probe: %s (%s)", status, sandbox$message)
 }
 
 derive_expectations <- function(combo_row, profile, skip_tests) {
@@ -191,13 +221,22 @@ derive_expectations <- function(combo_row, profile, skip_tests) {
     "pass"
   }
   tests_notes <- character()
+  sandbox_blocked <- isTRUE(profile$sandbox$kern_boottime$blocked)
   if (skip_tests) {
     tests_notes <- c(tests_notes, "User requested --skip-tests.")
   } else if (tests_label == "skip") {
     tests_notes <- c(tests_notes, "Tests depend on a successful build.")
   } else if (combo_row[["USE_DEVTOOLS"]] == 1) {
     tests_notes <- c(tests_notes, "Tests use devtools::test().")
-    if (combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1) {
+    if (sandbox_blocked) {
+      tests_notes <- c(tests_notes, "Sandbox blocks ps::ps_boot_time/kern.boottime.")
+      if (combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 0) {
+        tests_label <- "fail"
+        tests_notes <- c(tests_notes, "Expect failure until permission granted.")
+      } else {
+        tests_notes <- c(tests_notes, "Workaround: pkgbuild.has_compiler forced TRUE.")
+      }
+    } else if (combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1) {
       tests_notes <- c(tests_notes, "pkgbuild.has_compiler forced TRUE.")
     } else {
       tests_notes <- c(tests_notes, "pkgbuild will probe toolchain (processx).")
@@ -255,6 +294,35 @@ set_option_overrides <- function(opts) {
   }
 }
 
+with_ps_boot_time_guard <- function(enabled, code) {
+  stopifnot(is.function(code))
+  if (!isTRUE(enabled)) {
+    return(code())
+  }
+  if (!requireNamespace("ps", quietly = TRUE)) {
+    return(code())
+  }
+  ps_ns <- asNamespace("ps")
+  ps_fn <- get("ps_boot_time", envir = ps_ns)
+  fn_env <- environment(ps_fn)
+  if (is.null(fn_env) || !all(c("fun", "cache") %in% names(fn_env))) {
+    return(code())
+  }
+  original_fun <- fn_env$fun
+  original_cache <- fn_env$cache
+  fmt <- get("format_unix_time", envir = ps_ns)
+  guard_fun <- function(...) {
+    tryCatch(original_fun(...), error = function(e) fmt(as.numeric(Sys.time())))
+  }
+  fn_env$cache <- NULL
+  fn_env$fun <- guard_fun
+  on.exit({
+    fn_env$fun <- original_fun
+    fn_env$cache <- original_cache
+  }, add = TRUE)
+  code()
+}
+
 run_tests <- function(lib_path, log_path, combo_row) {
   dir.create(dirname(log_path), recursive = TRUE, showWarnings = FALSE)
   con <- file(log_path, open = "wt")
@@ -268,6 +336,7 @@ run_tests <- function(lib_path, log_path, combo_row) {
   exit_code <- 0L
   use_devtools <- isTRUE(combo_row[["USE_DEVTOOLS"]] == 1)
   assume_pkgbuild <- isTRUE(combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1)
+  sandbox_blocked <- isTRUE(getOption("RtoCodex.sandbox_blocks_kern_boottime", FALSE))
   driver <- if (use_devtools) "devtools::test()" else "testthat::test_dir()"
   tryCatch({
     if (use_devtools) {
@@ -283,7 +352,14 @@ run_tests <- function(lib_path, log_path, combo_row) {
         opt_reset <- set_option_overrides(list(pkgbuild.has_compiler = TRUE))
         on.exit(opt_reset(), add = TRUE)
       }
-      devtools::test(pkg = ".", reporter = "summary")
+      guarded_runner <- function() {
+        devtools::test(pkg = ".", reporter = "summary")
+      }
+      if (sandbox_blocked && assume_pkgbuild) {
+        with_ps_boot_time_guard(TRUE, guarded_runner)
+      } else {
+        guarded_runner()
+      }
     } else {
       suppressPackageStartupMessages(library("RtoCodex", lib.loc = lib_path, character.only = TRUE))
       on.exit(detach("package:RtoCodex", unload = TRUE), add = TRUE)
@@ -369,6 +445,10 @@ main <- function() {
 
   profile <- build_env_profile()
   summarize_profile(profile)
+  options(
+    RtoCodex.sandbox_blocks_kern_boottime = isTRUE(profile$sandbox$kern_boottime$blocked),
+    RtoCodex.sandbox_kern_boottime_message = profile$sandbox$kern_boottime$message
+  )
 
   combos <- expand.grid(
     USE_CPP20 = c(0, 1),

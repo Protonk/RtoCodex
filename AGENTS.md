@@ -7,20 +7,21 @@ This repository is an R package used to probe how GPT-5 Codex behaves in differe
 Currently the project is tested in two environments, MacOS 13+ on Apple Silicon and OpenAI's universal Ubuntu container. The container setup script is as follows:
 
 ```
-# update package lists
-sudo apt-get update
+#!/usr/bin/env bash
+set -euxo pipefail
 
-# Install build tools: gcc, g++, gfortran, make
-sudo apt-get install -y build-essential gfortran
+export DEBIAN_FRONTEND=noninteractive
 
-# Install R and development headers
-sudo apt-get install -y r-base r-base-dev
+apt-get update
+apt-get install -y --no-install-recommends \
+    r-base-core \
+    r-base-dev \
+    build-essential \
+    gfortran
 
-# 1) Choose a stable CRAN mirror (Posit PPM is fast and cacheable)
-export CRAN="https://packagemanager.posit.co/cran/__linux__/jammy/latest"
+# Optional: if gfortran turns out to be too heavy, drop it from the list above.
 
-## R packages: devtools and testthat are now required
-Rscript -e "options(repos = c(CRAN='${CRAN}')); install.packages(c('devtools','testthat'), Ncpus = parallel::detectCores())"
+rm -rf /var/lib/apt/lists/*
 ```
 
 Local environmental behavior and access is left for the agent (you) to determine.

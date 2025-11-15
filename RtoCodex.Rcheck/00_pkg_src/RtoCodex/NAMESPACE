@@ -1,2 +1,0 @@
-useDynLib(RtoCodex, .registration = TRUE)
-export(add1)

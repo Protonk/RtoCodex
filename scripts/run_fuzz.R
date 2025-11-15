@@ -141,9 +141,7 @@ main <- function() {
 
     env_vars <- c(
       sprintf("USE_CPP20=%s", combo_vals[["USE_CPP20"]]),
-      sprintf("USE_OPENMP=%s", combo_vals[["USE_OPENMP"]]),
-      sprintf("USE_DEVTOOLS=%s", combo_vals[["USE_DEVTOOLS"]]),
-      sprintf("PKGBUILD_ASSUME_TOOLS=%s", combo_vals[["PKGBUILD_ASSUME_TOOLS"]])
+      sprintf("USE_OPENMP=%s", combo_vals[["USE_OPENMP"]])
     )
 
     log_line("INFO", "  - install   -> start (log: %s)", install_log_rel)
@@ -156,8 +154,7 @@ main <- function() {
     test_exit <- NA_integer_
     test_note <- "Tests were not executed."
     if (install_status == "passed") {
-      driver_label <- if (combo_vals[["USE_DEVTOOLS"]] == 1) "subprocess" else "embedded"
-      log_line("INFO", "  - tests[%s] -> start (log: %s)", driver_label, test_log_rel)
+      log_line("INFO", "  - tests     -> start (log: %s)", test_log_rel)
       test_exit <- run_tests(lib_path, test_log, combo_vals)
       test_status <- if (test_exit == 0L) "passed" else "failed"
       test_note <- if (test_status == "passed") "Tests completed." else sprintf("Tests exited with status %s.", test_exit)
@@ -177,8 +174,6 @@ main <- function() {
       combo = combo_name,
       USE_CPP20 = combo_vals[["USE_CPP20"]],
       USE_OPENMP = combo_vals[["USE_OPENMP"]],
-      USE_DEVTOOLS = combo_vals[["USE_DEVTOOLS"]],
-      PKGBUILD_ASSUME_TOOLS = combo_vals[["PKGBUILD_ASSUME_TOOLS"]],
       install_expected = expectations$install$label,
       install_status = install_status,
       install_exit = install_exit,

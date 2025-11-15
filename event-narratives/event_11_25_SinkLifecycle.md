@@ -9,7 +9,7 @@
 
 ## Sequence
 - Invoked `make fuzz-once` to validate new probes; it failed with `Error in close.connection(con) : cannot close 'message' sink connection`.
-- Inspected `artifacts/fuzz/run_20251114-210159-3188/USE_CPP20=0_USE_OPENMP=0_USE_DEVTOOLS=0_PKGBUILD_ASSUME_TOOLS=1/tests.log`, confirming the failure occurred after the embedded matrix completed 16 combos.
+- Inspected `artifacts/fuzz/run_20251114-210159-3188/USE_CPP20=0_USE_OPENMP=0/tests.log`, confirming the failure occurred after the embedded matrix completed every combo in that run.
 - Traced the error to `scripts/matrix_lib.R::run_tests()` where the embedded driver wraps stdout/stderr in sinks tied to a single connection but only partially unwinds them on exit.
 - Updated `run_tests()` so it records the incoming sink depth, unwinds message/output sinks safely, and only then closes the connection; revalidated with `make test` and `make fuzz-once`.
 

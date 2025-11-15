@@ -1,6 +1,6 @@
 # tests/unit/unit_runner.R centralizes the dependency-free unit test harness so
 # both the CLI scripts and R CMD check can execute the same suite without
-# pulling in devtools or testthat.
+# pulling in external helper packages.
 
 rtocodex_find_package_root <- local({
   cached <- NULL

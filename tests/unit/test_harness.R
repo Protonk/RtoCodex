@@ -1,5 +1,5 @@
 # tests/unit/test_harness.R implements a tiny assertion DSL so agents can write
-# deterministic regression tests without depending on devtools or testthat.
+# deterministic regression tests without depending on external helper packages.
 
 .test_registry <- list()
 

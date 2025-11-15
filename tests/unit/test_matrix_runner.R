@@ -37,11 +37,9 @@ test_case("matrix builder spans every toggle combination", {
   expected <- expand.grid(
     USE_CPP20 = c(0, 1),
     USE_OPENMP = c(0, 1),
-    USE_DEVTOOLS = c(0, 1),
-    PKGBUILD_ASSUME_TOOLS = c(0, 1),
     stringsAsFactors = FALSE
   )
-  assert_equal(nrow(combos), 16L)
+  assert_equal(nrow(combos), 4L)
   assert_true(identical(combos, expected))
 })
 
@@ -55,7 +53,7 @@ test_case("matrix runner formats combination names predictably", {
 
 test_case("matrix runner derives install and test expectations", {
   env <- load_run_matrix_env()
-  combo <- list(USE_CPP20 = 1, USE_OPENMP = 1, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
+  combo <- list(USE_CPP20 = 1, USE_OPENMP = 1)
   profile <- list(
     cpp20 = list(supported = FALSE, reason = "C++20 disabled"),
     openmp = list(state = "missing", reason = "OpenMP not in toolchain"),
@@ -67,28 +65,27 @@ test_case("matrix runner derives install and test expectations", {
   assert_equal(exp$tests$label, "skip")
   assert_match(exp$tests$notes, "depend on a successful build")
 
-  combo2 <- list(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 1)
+  combo2 <- list(USE_CPP20 = 0, USE_OPENMP = 0)
   exp2 <- env$derive_expectations(combo2, profile, skip_tests = TRUE)
   assert_equal(exp2$install$label, "pass")
   assert_equal(exp2$tests$label, "skip")
   assert_match(exp2$tests$notes, "User requested")
 
-  combo3 <- list(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 1, PKGBUILD_ASSUME_TOOLS = 0)
+  combo3 <- list(USE_CPP20 = 0, USE_OPENMP = 0)
   exp3 <- env$derive_expectations(combo3, profile, skip_tests = FALSE)
   assert_equal(exp3$tests$label, "fail")
-  assert_match(exp3$tests$notes, "Sandbox blocks")
-  assert_match(exp3$tests$notes, "subprocess")
+  assert_match(exp3$tests$notes, "guard aborts")
 
   profile_no_block <- profile
   profile_no_block$sandbox$kern_boottime$blocked <- FALSE
   exp4 <- env$derive_expectations(combo3, profile_no_block, skip_tests = FALSE)
   assert_equal(exp4$tests$label, "pass")
-  assert_match(exp4$tests$notes, "subprocess")
+  assert_match(exp4$tests$notes, "embedded harness")
 
-  combo_inline <- list(USE_CPP20 = 0, USE_OPENMP = 0, USE_DEVTOOLS = 0, PKGBUILD_ASSUME_TOOLS = 0)
-  exp_inline <- env$derive_expectations(combo_inline, profile_no_block, skip_tests = FALSE)
-  assert_equal(exp_inline$tests$label, "pass")
-  assert_match(exp_inline$tests$notes, "embedded harness")
+  combo_openmp <- list(USE_CPP20 = 0, USE_OPENMP = 1)
+  exp_openmp <- env$derive_expectations(combo_openmp, profile_no_block, skip_tests = FALSE)
+  assert_equal(exp_openmp$tests$label, "pass")
+  assert_match(exp_openmp$tests$notes, "embedded harness")
 })
 
 test_case("matrix runner detects C++20 support signals", {
@@ -177,7 +174,7 @@ test_case("matrix runner main produces timelines and summaries with stubbed inst
     sys = list(sysname = "TestOS", release = "1.0"),
     cpp20 = list(supported = FALSE, reason = "C++20 disabled in harness"),
     openmp = list(state = "missing", reason = "OpenMP variables absent"),
-    sandbox = list(kern_boottime = list(blocked = TRUE, detected = TRUE, message = "Operation not permitted")),
+    sandbox = list(kern_boottime = list(blocked = FALSE, detected = TRUE, message = "ps::ps_boot_time() succeeded.")),
     label = "test-profile"
   )
   env$build_env_profile <- function() profile
@@ -196,11 +193,7 @@ test_case("matrix runner main produces timelines and summaries with stubbed inst
   }
   env$run_tests <- function(lib_path, log_path, combo_row) {
     dir.create(dirname(log_path), recursive = TRUE, showWarnings = FALSE)
-    driver <- if (combo_row[["USE_DEVTOOLS"]] == 1) "subprocess" else "embedded"
-    writeLines(c("fake tests", basename(lib_path), driver), log_path)
-    if (combo_row[["USE_DEVTOOLS"]] == 1 && combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 0) {
-      return(4L)
-    }
+    writeLines(c("fake tests", basename(lib_path)), log_path)
     if (combo_row[["USE_OPENMP"]] == 1) {
       return(3L)
     }
@@ -222,9 +215,9 @@ test_case("matrix runner main produces timelines and summaries with stubbed inst
 
   timeline <- utils::read.csv(timeline_files[[1L]], stringsAsFactors = FALSE)
   summary <- utils::read.csv(summary_files[[1L]], stringsAsFactors = FALSE)
-  assert_equal(nrow(summary), 16L)
-  assert_equal(sum(timeline$stage == "install"), 16L)
-  assert_equal(sum(timeline$stage == "tests"), 16L)
+  assert_equal(nrow(summary), 4L)
+  assert_equal(sum(timeline$stage == "install"), 4L)
+  assert_equal(sum(timeline$stage == "tests"), 4L)
 
   failing_installs <- subset(summary, grepl("USE_CPP20=1", combo))
   assert_true(all(failing_installs$install_status == "failed"))
@@ -232,28 +225,12 @@ test_case("matrix runner main produces timelines and summaries with stubbed inst
 
   failing_tests_openmp <- subset(summary, grepl("USE_OPENMP=1", combo) & !grepl("USE_CPP20=1", combo))
   assert_true(all(failing_tests_openmp$test_status == "failed"))
-  openmp_devtools_permission <- subset(
-    failing_tests_openmp,
-    grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo)
-  )
-  openmp_other <- subset(
-    failing_tests_openmp,
-    !(grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo))
-  )
-  assert_true(all(openmp_devtools_permission$test_expected == "fail"))
-  assert_true(all(openmp_other$test_expected == "pass"))
+  assert_true(all(failing_tests_openmp$test_exit == 3))
+  assert_true(all(failing_tests_openmp$test_expected == "pass"))
 
-  devtools_permission <- subset(summary, grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=0", combo))
-  devtools_permission <- subset(devtools_permission, !grepl("USE_CPP20=1", combo))
-  assert_true(all(devtools_permission$test_status == "failed"))
-  assert_true(all(grepl("USE_DEVTOOLS=1", devtools_permission$combo)))
-  assert_true(all(devtools_permission$test_expected == "fail"))
-
-  devtools_guarded <- subset(summary, grepl("USE_DEVTOOLS=1", combo) & grepl("PKGBUILD_ASSUME_TOOLS=1", combo))
-  devtools_guarded <- subset(devtools_guarded, !grepl("USE_CPP20=1", combo))
-  devtools_guarded <- subset(devtools_guarded, !grepl("USE_OPENMP=1", combo))
-  assert_true(all(devtools_guarded$test_status == "passed"))
-  assert_true(all(devtools_guarded$test_expected == "pass"))
+  passing_tests <- subset(summary, !grepl("USE_OPENMP=1", combo) & !grepl("USE_CPP20=1", combo))
+  assert_true(all(passing_tests$test_status == "passed"))
+  assert_true(all(passing_tests$test_expected == "pass"))
 })
 
 test_case("environment helper restores overrides", {

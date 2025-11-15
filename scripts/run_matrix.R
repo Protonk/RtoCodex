@@ -98,9 +98,7 @@ main <- function() {
 
     env_vars <- c(
       sprintf("USE_CPP20=%s", combo_vals[["USE_CPP20"]]),
-      sprintf("USE_OPENMP=%s", combo_vals[["USE_OPENMP"]]),
-      sprintf("USE_DEVTOOLS=%s", combo_vals[["USE_DEVTOOLS"]]),
-      sprintf("PKGBUILD_ASSUME_TOOLS=%s", combo_vals[["PKGBUILD_ASSUME_TOOLS"]])
+      sprintf("USE_OPENMP=%s", combo_vals[["USE_OPENMP"]])
     )
 
     log_line("INFO", "  - install   -> start (log: %s)", install_log_rel)
@@ -119,8 +117,7 @@ main <- function() {
     test_note <- "Tests were not executed."
     run_tests_flag <- install_status == "passed" && !opts$skip_tests
     if (run_tests_flag) {
-      driver_label <- if (combo_vals[["USE_DEVTOOLS"]] == 1) "subprocess" else "embedded"
-      log_line("INFO", "  - tests[%s] -> start (log: %s)", driver_label, test_log_rel)
+      log_line("INFO", "  - tests     -> start (log: %s)", test_log_rel)
       test_exit <- run_tests(lib_path, test_log, combo_vals)
       test_status <- if (test_exit == 0L) "passed" else "failed"
       test_note <- if (test_status == "passed") {

@@ -23,7 +23,7 @@ invocation if you prefer `make test`.
 
 ## Harness automation
 
-- `make fuzz-all` (or `Rscript scripts/run_fuzz.R --n=9999`) tells the fuzz harness to cover the entire `(USE_CPP20, USE_OPENMP, USE_DEVTOOLS, PKGBUILD_ASSUME_TOOLS)` grid while logging under `artifacts/fuzz/run_<timestamp-id>/combo/`. The `make matrix` target now simply aliases `make fuzz-all` for compatibility.
+- `make fuzz-all` (or `Rscript scripts/run_fuzz.R --n=9999`) tells the fuzz harness to cover the entire `(USE_CPP20, USE_OPENMP)` grid while logging under `artifacts/fuzz/run_<timestamp-id>/combo/`. The `make matrix` target now simply aliases `make fuzz-all` for compatibility.
 - `make fuzz` (or `Rscript scripts/run_fuzz.R`) samples a handful of rows from the same deterministic grid, installs/tests them with the shared helpers, and records the results under `artifacts/fuzz/run_<timestamp-id>/`.
 - `make fuzz-once` requests a single random combo. Pass `ARGS="--n=8 --seed=123"` with any fuzz target to control the sample size and RNG seed; artifacts always include `config.rds` (host profile, runtime metadata, seed) and `summary.csv` (matrix toggles, expected vs observed statuses, `expectation_match`, and log paths).
 - `make fuzz-clean` removes `build-lib/fuzz` and `artifacts/fuzz` if you need to reclaim space or reset between fuzz campaigns.

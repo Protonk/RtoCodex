@@ -58,8 +58,6 @@ build_matrix <- function() {
   expand.grid(
     USE_CPP20 = c(0, 1),
     USE_OPENMP = c(0, 1),
-    USE_DEVTOOLS = c(0, 1),
-    PKGBUILD_ASSUME_TOOLS = c(0, 1),
     stringsAsFactors = FALSE
   )
 }
@@ -121,21 +119,31 @@ detect_openmp_support <- function(openmp_probes) {
   list(state = "unknown", reason = "OpenMP support undetermined from R CMD config.")
 }
 
-detect_kern_boottime_block <- function() {
+check_kern_boottime_access <- function() {
   if (!requireNamespace("ps", quietly = TRUE)) {
-    return(list(blocked = NA, detected = FALSE, message = "ps package not available."))
+    return(list(ok = NA, message = "ps package not available."))
   }
   err <- tryCatch({
     ps::ps_boot_time()
     NULL
   }, error = function(e) e)
   if (is.null(err)) {
-    return(list(blocked = FALSE, detected = TRUE, message = "ps::ps_boot_time() succeeded."))
+    return(list(ok = TRUE, message = "ps::ps_boot_time() succeeded."))
   }
   msg <- conditionMessage(err)
-  blocked <- grepl("kern\\.boottime", msg, ignore.case = TRUE) &&
-    grepl("Operation not permitted|permission denied|EPERM|EACCES", msg, ignore.case = TRUE)
-  list(blocked = blocked, detected = TRUE, message = msg)
+  if (!nzchar(msg)) {
+    msg <- "ps::ps_boot_time() failed without a diagnostic message."
+  }
+  list(ok = FALSE, message = msg)
+}
+
+detect_kern_boottime_block <- function() {
+  state <- check_kern_boottime_access()
+  list(
+    blocked = !identical(state$ok, TRUE),
+    detected = !is.na(state$ok),
+    message = state$message
+  )
 }
 
 build_env_profile <- function() {
@@ -172,10 +180,10 @@ summarize_profile <- function(profile) {
   log_line("INFO", "  CXX20 probe: %s", profile$cpp20$reason)
   log_line("INFO", "  OpenMP probe: %s", profile$openmp$reason)
   sandbox <- profile$sandbox$kern_boottime
-  status <- if (!isTRUE(sandbox$detected)) {
-    "not evaluated"
-  } else if (isTRUE(sandbox$blocked)) {
+  status <- if (isTRUE(sandbox$blocked)) {
     "blocked"
+  } else if (!isTRUE(sandbox$detected)) {
+    "not evaluated"
   } else {
     "ok"
   }
@@ -200,19 +208,21 @@ derive_expectations <- function(combo_row, profile, skip_tests = FALSE) {
     "pass"
   }
   tests_notes <- character()
-  sandbox_blocked <- isTRUE(profile$sandbox$kern_boottime$blocked)
+  sandbox_state <- profile$sandbox$kern_boottime
+  sandbox_blocked <- isTRUE(sandbox_state$blocked)
   if (skip_tests) {
     tests_notes <- c(tests_notes, "User requested --skip-tests.")
   } else if (tests_label == "skip") {
     tests_notes <- c(tests_notes, "Tests depend on a successful build.")
-  } else if (combo_row[["USE_DEVTOOLS"]] == 1) {
-    tests_notes <- c(tests_notes, "Tests run via subprocess harness (Rscript).")
-    if (sandbox_blocked && combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 0) {
-      tests_label <- "fail"
-      tests_notes <- c(tests_notes, "Sandbox blocks kern.boottime for subprocess driver.")
-    } else if (combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1) {
-      tests_notes <- c(tests_notes, "PKGBUILD_ASSUME_TOOLS=1 disables the sandbox guard.")
+  } else if (sandbox_blocked) {
+    reason <- sandbox_state$message
+    detail <- if (!is.null(reason) && nzchar(reason)) {
+      sprintf(" (%s)", reason)
+    } else {
+      ""
     }
+    tests_label <- "fail"
+    tests_notes <- c(tests_notes, sprintf("Host cannot read kern.boottime%s; guard aborts before running tests.", detail))
   } else {
     tests_notes <- c(tests_notes, "Tests run via embedded harness.")
   }
@@ -258,71 +268,52 @@ set_env_vars <- function(vars) {
 
 run_tests <- function(lib_path, log_path, combo_row) {
   dir.create(dirname(log_path), recursive = TRUE, showWarnings = FALSE)
-  env_vars <- c(
-    sprintf("USE_CPP20=%s", combo_row[["USE_CPP20"]]),
-    sprintf("USE_OPENMP=%s", combo_row[["USE_OPENMP"]]),
-    sprintf("USE_DEVTOOLS=%s", combo_row[["USE_DEVTOOLS"]]),
-    sprintf("PKGBUILD_ASSUME_TOOLS=%s", combo_row[["PKGBUILD_ASSUME_TOOLS"]])
-  )
-  use_devtools <- isTRUE(combo_row[["USE_DEVTOOLS"]] == 1)
-  assume_pkgbuild <- isTRUE(combo_row[["PKGBUILD_ASSUME_TOOLS"]] == 1)
-  sandbox_blocked <- isTRUE(getOption("RtoCodex.sandbox_blocks_kern_boottime", FALSE))
+  con <- file(log_path, open = "wt")
+  on.exit({
+    if (isOpen(con)) {
+      close(con)
+    }
+  })
+  env_reset <- set_env_vars(lapply(combo_row, as.character))
+  on.exit(env_reset(), add = TRUE)
 
-  if (!use_devtools) {
-    con <- file(log_path, open = "wt")
-    baseline_output <- sink.number()
-    baseline_message <- sink.number(type = "message")
-    sink(con)
-    sink(con, type = "message")
-    on.exit({
-      while (sink.number(type = "message") > baseline_message) {
-        sink(NULL, type = "message")
-      }
-      while (sink.number() > baseline_output) {
-        sink(NULL)
-      }
-    })
-    on.exit({
-      if (isOpen(con)) {
-        close(con)
-      }
-    }, add = TRUE)
-    env_reset <- set_env_vars(lapply(combo_row, as.character))
-    on.exit(env_reset(), add = TRUE)
-    exit_code <- tryCatch({
-      runner_path <- file.path(repo_root, "tests", "unit", "unit_runner.R")
-      if (!file.exists(runner_path)) {
-        stop(sprintf("Unit test runner not found at %s", runner_path))
-      }
-      runner_env <- new.env(parent = baseenv())
-      sys.source(runner_path, envir = runner_env)
-      result <- runner_env$rtocodex_run_unit_tests(config = list(driver = "embedded"), lib_path = lib_path)
-      if (isTRUE(result$failed)) 1L else 0L
-    }, error = function(e) {
-      message("[embedded] Test run failed: ", conditionMessage(e))
-      1L
-    })
-    return(exit_code)
-  }
-
-  if (sandbox_blocked && !assume_pkgbuild) {
-    writeLines(
-      c(
-        "Sandbox blocked kern.boottime; subprocess harness intentionally aborts.",
-        "Set PKGBUILD_ASSUME_TOOLS=1 to bypass the guard in this environment."
-      ),
-      con = log_path
+  guard_state <- check_kern_boottime_access()
+  if (!identical(guard_state$ok, TRUE)) {
+    lines <- c(
+      "ps::ps_boot_time() guard failed; aborting tests.",
+      guard_state$message
     )
+    writeLines(lines, con = con)
     return(5L)
   }
 
-  args <- c(
-    "tests/run_unit_tests.R",
-    sprintf("--driver=%s", "subprocess"),
-    sprintf("--lib=%s", lib_path)
-  )
-  status <- system2("Rscript", args = args, stdout = log_path, stderr = log_path, env = env_vars)
-  if (is.null(status)) 0L else status
+  baseline_output <- sink.number()
+  baseline_message <- sink.number(type = "message")
+  sink(con)
+  sink(con, type = "message")
+  on.exit({
+    while (sink.number(type = "message") > baseline_message) {
+      sink(NULL, type = "message")
+    }
+    while (sink.number() > baseline_output) {
+      sink(NULL)
+    }
+  }, add = TRUE)
+
+  exit_code <- tryCatch({
+    runner_path <- file.path(repo_root, "tests", "unit", "unit_runner.R")
+    if (!file.exists(runner_path)) {
+      stop(sprintf("Unit test runner not found at %s", runner_path))
+    }
+    runner_env <- new.env(parent = baseenv())
+    sys.source(runner_path, envir = runner_env)
+    result <- runner_env$rtocodex_run_unit_tests(config = list(driver = "embedded"), lib_path = lib_path)
+    if (isTRUE(result$failed)) 1L else 0L
+  }, error = function(e) {
+    message("[embedded] Test run failed: ", conditionMessage(e))
+    1L
+  })
+  exit_code
 }
 
 write_session_info <- function(path, combo_name, combo_row) {

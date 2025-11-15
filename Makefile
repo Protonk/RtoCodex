@@ -11,9 +11,10 @@ PROBE_DIR ?= probes
 PROBE_RUNNER ?= scripts/run_probes.R
 
 .PHONY: fuzz-all matrix check fuzz fuzz-once fuzz-clean \
-	test \
-	cap_sysctl_kern_boottime cap_cxx20_flags cap_openmp_flags \
-	caps caps-summary
+        test \
+        cap_sysctl_kern_boottime cap_cxx20_flags cap_openmp_flags \
+        cap_locale_utf8 cap_fs_case_sensitivity cap_fortran_config \
+        caps caps-summary
 
 fuzz-all:
 	Rscript $(FUZZ_SCRIPT) --lib=$(FUZZ_LIB) --artifacts=$(FUZZ_ARTIFACTS) --n=9999 $(ARGS)
@@ -49,6 +50,18 @@ cap_cxx20_flags:
 cap_openmp_flags:
 	mkdir -p $(CAP_ARTIFACTS)
 	Rscript $(PROBE_DIR)/cap_openmp_flags.R > $(CAP_ARTIFACTS)/cap_openmp_flags.txt
+
+cap_locale_utf8:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_locale_utf8.R > $(CAP_ARTIFACTS)/cap_locale_utf8.txt
+
+cap_fs_case_sensitivity:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_fs_case_sensitivity.R > $(CAP_ARTIFACTS)/cap_fs_case_sensitivity.txt
+
+cap_fortran_config:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_fortran_config.R > $(CAP_ARTIFACTS)/cap_fortran_config.txt
 
 caps:
 	Rscript $(PROBE_RUNNER) --probes=$(PROBE_DIR) --artifacts=$(CAP_ARTIFACTS)

@@ -4,6 +4,7 @@
 .RData
 .Ruserdata
 RtoCodex.Rproj
+RtoCodex.Rcheck
 
 # MacOS rubbish
 .DS_Store

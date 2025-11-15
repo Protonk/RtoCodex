@@ -270,12 +270,22 @@ run_tests <- function(lib_path, log_path, combo_row) {
 
   if (!use_devtools) {
     con <- file(log_path, open = "wt")
-    on.exit(close(con))
+    baseline_output <- sink.number()
+    baseline_message <- sink.number(type = "message")
     sink(con)
     sink(con, type = "message")
     on.exit({
-      sink(NULL)
-      sink(NULL, type = "message")
+      while (sink.number(type = "message") > baseline_message) {
+        sink(NULL, type = "message")
+      }
+      while (sink.number() > baseline_output) {
+        sink(NULL)
+      }
+    })
+    on.exit({
+      if (isOpen(con)) {
+        close(con)
+      }
     }, add = TRUE)
     env_reset <- set_env_vars(lapply(combo_row, as.character))
     on.exit(env_reset(), add = TRUE)

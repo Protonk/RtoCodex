@@ -13,6 +13,8 @@ PROBE_RUNNER ?= scripts/run_probes.R
 .PHONY: fuzz-all matrix check fuzz fuzz-once fuzz-clean \
 	test \
 	cap_sysctl_kern_boottime cap_cxx20_flags cap_openmp_flags \
+	cap_fortran_shlib cap_utf8_locale cap_temp_symlink_exec \
+	cap_pkg_config_path cap_long_tmp_paths cap_case_sensitive_tmpfs \
 	caps caps-summary
 
 fuzz-all:
@@ -49,6 +51,30 @@ cap_cxx20_flags:
 cap_openmp_flags:
 	mkdir -p $(CAP_ARTIFACTS)
 	Rscript $(PROBE_DIR)/cap_openmp_flags.R > $(CAP_ARTIFACTS)/cap_openmp_flags.txt
+
+cap_fortran_shlib:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_fortran_shlib.R > $(CAP_ARTIFACTS)/cap_fortran_shlib.txt
+
+cap_utf8_locale:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_utf8_locale.R > $(CAP_ARTIFACTS)/cap_utf8_locale.txt
+
+cap_temp_symlink_exec:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_temp_symlink_exec.R > $(CAP_ARTIFACTS)/cap_temp_symlink_exec.txt
+
+cap_pkg_config_path:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_pkg_config_path.R > $(CAP_ARTIFACTS)/cap_pkg_config_path.txt
+
+cap_long_tmp_paths:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_long_tmp_paths.R > $(CAP_ARTIFACTS)/cap_long_tmp_paths.txt
+
+cap_case_sensitive_tmpfs:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_case_sensitive_tmpfs.R > $(CAP_ARTIFACTS)/cap_case_sensitive_tmpfs.txt
 
 caps:
 	Rscript $(PROBE_RUNNER) --probes=$(PROBE_DIR) --artifacts=$(CAP_ARTIFACTS)

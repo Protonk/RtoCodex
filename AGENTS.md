@@ -1,3 +1,4 @@
+<!-- AGENTS.md outlines repo-wide workflows and links to scoped guides such as probes/AGENTS.md. -->
 # RtoCodex · AGENTS guide
 
 This repository is an R package used to probe how GPT-5 Codex behaves in different environments when working with R, compilation, and test infrastructure.
@@ -65,13 +66,6 @@ When you record an event narrative:
 4. Keep the tone factual and reproducible so another agent can replay the steps without re-reading the chat log.
 5. Revise event narratives by adding to follow-up. If revisions become dramatic, append a new 3 section summary (as detailed in Step 3) at the end. Only one new summary is needed, it can be overwritten indefinitely. 
 
-## Capability probes (sandbox behavior)
+## Capability probes
 
-- Name each sandbox quirk as a `cap_*` capability. Probe scripts live under `probes/` and write `artifacts/caps/cap_<name>.txt` with a single status token.
-- Run `make caps` to execute every probe; the target calls `scripts/run_probes.R`, which enumerates `probes/cap_*.R`, records artifacts, and writes/prints `artifacts/caps/caps.json` (a JSON map of capability names to statuses). `make caps-summary` simply re-runs `make caps` and echoes the JSON for convenience.
-- Current probes:
-  - `cap_sysctl_kern_boottime` shells ps::ps_boot_time() and classifies `supported`, `blocked_expected`, or `blocked_unexpected`.
-  - `cap_cxx20_flags` inspects `R CMD config CXX20` for C++20 flags and returns `supported`, `missing`, or `error`.
-  - `cap_openmp_flags` inspects `R CMD config SHLIB_OPENMP_*` to decide whether OpenMP flags are `available`, `missing`, or `error`.
-- Tests and scripts never re-run probes; they read artifacts via helpers like `needs_cap(\"cap_sysctl_kern_boottime\", \"supported\")` (defined in `R/caps_helpers.R`) to opt in or skip work.
-- To add a new capability: capture a minimal reproducer, add `probes/cap_<name>.R`, create a Make target `cap_<name>` that writes `artifacts/caps/cap_<name>.txt`, and the aggregate runner automatically includes it. Optionally gate tests with `needs_cap()` so behavior differences stay documented.
+Probe authoring, naming, wiring, and consumption details now live in `probes/AGENTS.md`. Consult that guide whenever you add or modify a `cap_*.R` script or update the capability harness. This root document only references probes when describing higher-level workflows (e.g., fuzz targets that assume the capability cache has already been generated).

@@ -1,14 +1,23 @@
-<!--
-probes/probe_ideas.md collects small, environment-sensitive capability probe
-concepts so agents can pick them up without rediscovering the rationale.
--->
+<!-- probes/probe_ideas.md captures capability coverage notes plus probe concepts that still need implementation. -->
+# Probe Ideation Notes
 
-# Probe ideas for future capability checks
+## Coverage Map
+- **Heavily probed:** toolchains (C++20/OpenMP flags, Fortran SHLIB, pkg-config), filesystem basics (case sensitivity, long tmp paths, executable symlinks), and UTF-8 string I/O already have multiple probes plus unit coverage.
+- **Lightly probed:** resource limits (ulimits, CPU quotas), numerical backends (BLAS/LAPACK selection, threading), locale-side filesystem quirks (Unicode filenames, normalization, decomposed characters), IPC primitives (UNIX sockets/FIFOs), and process controls (fork availability, TMPDIR permissions) currently have little or no coverage.
 
-- **Selected – cap_fortran_shlib**: Compile a trivial Fortran subroutine via `R CMD SHLIB` and classify whether the host toolchain provides `gfortran` or equivalent; macOS ships Fortran inconsistently while the universal container installs it explicitly, so this surfaces missing runtime linkers quickly.
-- **Selected – cap_utf8_locale**: Use `iconv()` plus a temporary file round-trip containing escaped Unicode codepoints to check whether the current locale can encode/decode multibyte UTF-8 strings; headless Linux containers often default to `C` locale while laptops usually default to UTF-8, which changes parser behavior.
-- **Selected – cap_temp_symlink_exec**: Build a short shell script inside `tempdir()`, symlink it into a nested path, and execute it; some corporate macOS machines mount temporary directories with `noexec` or restrict symlink creation inside `/var/folders`.
-- **Selected – cap_pkg_config_path**: Detect whether `pkg-config` exists on `PATH` and can resolve a stub `.pc` file, since Linux containers tend to bundle it while stock macOS lacks it without Homebrew, which impacts optional system dependencies.
-- **Selected – cap_long_tmp_paths**: Create a >200-character nested directory under `tempdir()` and check file creation succeeds, because long sandbox prefixes like `/var/folders/...` can break poorly written build scripts.
-- TODO – cap_blas_thread_env: Read and toggle BLAS/OpenBLAS thread-env vars (e.g., `OPENBLAS_NUM_THREADS=1`) before a small matrix multiply to see whether the runtime honors the override; this often differs between Accelerate on macOS and OpenBLAS on Linux.
-- **Selected – cap_case_sensitive_tmpfs**: Drop a file whose casing differs only by letters and observe whether the filesystem treats them as unique entries; macOS default HFS/APFS installations are case-insensitive whereas Linux tmpfs/ext4 are case-sensitive, so this affects tests that assume unique file identifiers.
+## Candidate Probe Backlog
+| Probe | Subsystem | Signal & Differentiator | Priority | Status |
+| --- | --- | --- | --- | --- |
+| cap_unicode_filenames | Filesystem & encodings | Attempt to create/list a UTF-8 filename that mixes NFC/NFD characters to see whether macOS normalizes paths (should report `nfd_normalized`) while Linux preserves NFC; also surfaces locales that cannot create such names at all. | High | **Selected this run** (implemented) |
+| cap_open_files_limit | Resource limits | Runs `ulimit -n` via POSIX shell and buckets the numeric limit (low/medium/high/unlimited) so the harness can predict when tests opening many files will fail differently between macOS (often low) and containers (often high). | High | **Selected this run** (implemented) |
+| cap_blas_backend | Numerical/toolchain | Reads `extSoftVersion()['BLAS']` to classify Accelerate vs OpenBLAS vs MKL vs reference BLAS, which often diverges between macOS installations and Ubuntu containers and affects floating-point/parallel behavior. | High | **Selected this run** (implemented) |
+| cap_parallel_fork_mclapply | Process/forking | Calls `parallel::mclapply()` with `mc.cores = 2` to detect environments that disable forked workers (e.g., sandboxed macOS shells) vs Linux containers that allow them; warns harnesses before they request multi-core tests. | Medium | Backlog |
+| cap_temp_fifo_support | Filesystem / IPC | Creates a FIFO with `fifo()` in `tempdir()` and checks if writing through it succeeds, flagging filesystems that forbid FIFOs (common on some mounted macOS volumes) versus tmpfs-backed Linux containers. | Medium | Backlog |
+| cap_locale_collation | Locale | Sorts accented strings under the default locale to see whether collation honors locale rules (e.g., macOS en_US vs container C.UTF-8) which impacts deterministic ordering tests. | Medium | Backlog |
+| cap_umask_tmp_permissions | Filesystem / permissions | Spawns a shell to create files with known `umask` values and inspects resulting mode bits, revealing sandboxes that clamp permissions differently (notably macOS SIP) compared to containers. | Low | Backlog |
+| cap_tmp_socket_length | IPC | Uses a small helper to create UNIX domain sockets with progressively longer paths until hitting `sun_path` limits; macOS (shorter limit) vs Linux (longer) influences where harnesses may create socket files. | Medium | Backlog |
+| cap_linker_rpath_flags | Toolchain/linker | Runs `R CMD SHLIB` on a stub that injects `-Wl,-rpath` to confirm whether linkers accept custom run-path hints (GNU ld vs Apple ld behave differently), so future C probes know when to expect warnings. | Medium | Backlog |
+| cap_space_dir_exec | Filesystem/execution | Creates a directory with embedded spaces + parentheses, copies a helper script there, and executes it to detect quoting issues in shells (macOS default zsh) vs container bash. | Low | Backlog |
+| cap_temp_fifo_manyfiles | Filesystem stress | Opens hundreds of zero-byte files in a temp subtree to see whether quotas or inode limits trigger errors (more common inside small tmpfs mounts) before fuzz harnesses spam tiny artifacts. | Low | Backlog |
+
+Implemented probes are wired into the harness below; remaining concepts stay here as a prioritized backlog for future runs.

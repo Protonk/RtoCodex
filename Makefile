@@ -15,6 +15,7 @@ PROBE_RUNNER ?= scripts/run_probes.R
 	cap_sysctl_kern_boottime cap_cxx20_flags cap_openmp_flags \
 	cap_fortran_shlib cap_utf8_locale cap_temp_symlink_exec \
 	cap_pkg_config_path cap_long_tmp_paths cap_case_sensitive_tmpfs \
+	cap_unicode_filenames cap_open_files_limit cap_blas_backend \
 	caps caps-summary
 
 fuzz-all:
@@ -75,6 +76,18 @@ cap_long_tmp_paths:
 cap_case_sensitive_tmpfs:
 	mkdir -p $(CAP_ARTIFACTS)
 	Rscript $(PROBE_DIR)/cap_case_sensitive_tmpfs.R > $(CAP_ARTIFACTS)/cap_case_sensitive_tmpfs.txt
+
+cap_unicode_filenames:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_unicode_filenames.R > $(CAP_ARTIFACTS)/cap_unicode_filenames.txt
+
+cap_open_files_limit:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_open_files_limit.R > $(CAP_ARTIFACTS)/cap_open_files_limit.txt
+
+cap_blas_backend:
+	mkdir -p $(CAP_ARTIFACTS)
+	Rscript $(PROBE_DIR)/cap_blas_backend.R > $(CAP_ARTIFACTS)/cap_blas_backend.txt
 
 caps:
 	Rscript $(PROBE_RUNNER) --probes=$(PROBE_DIR) --artifacts=$(CAP_ARTIFACTS)

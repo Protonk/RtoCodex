@@ -133,3 +133,39 @@ test_case("cap_case_sensitive_tmpfs probe reports filesystem casing behavior", {
     assert_equal(res$status, 0L, "case sensitivity detection must exit successfully")
   }
 })
+
+test_case("cap_unicode_filenames probe surfaces normalization behavior", {
+  script <- pkg_file("probes", "cap_unicode_filenames.R")
+  res <- capture_probe_run(script)
+  valid <- c("nfc_preserved", "nfd_normalized", "unknown_normalization", "path_encoding_blocked", "probe_error")
+  assert_true(res$value %in% valid, info = sprintf("Unexpected status: %s", res$value))
+  if (identical(res$value, "probe_error")) {
+    assert_true(res$status != 0L, "probe_error should propagate a non-zero exit status")
+  } else {
+    assert_equal(res$status, 0L, "normalization classifications should exit successfully")
+  }
+})
+
+test_case("cap_open_files_limit probe reports descriptor ceilings", {
+  script <- pkg_file("probes", "cap_open_files_limit.R")
+  res <- capture_probe_run(script)
+  valid <- c("low", "medium", "high", "unlimited", "probe_error")
+  assert_true(res$value %in% valid, info = sprintf("Unexpected status: %s", res$value))
+  if (identical(res$value, "probe_error")) {
+    assert_true(res$status != 0L, "probe_error should bubble up an error exit status")
+  } else {
+    assert_equal(res$status, 0L, "low/medium/high/unlimited should not fail the harness")
+  }
+})
+
+test_case("cap_blas_backend probe labels the linked BLAS vendor", {
+  script <- pkg_file("probes", "cap_blas_backend.R")
+  res <- capture_probe_run(script)
+  valid <- c("accelerate", "openblas", "mkl", "reference", "other", "unknown", "probe_error")
+  assert_true(res$value %in% valid, info = sprintf("Unexpected status: %s", res$value))
+  if (identical(res$value, "probe_error")) {
+    assert_true(res$status != 0L, "probe_error should propagate failures to the harness")
+  } else {
+    assert_equal(res$status, 0L, "backend labels should be informational only")
+  }
+})

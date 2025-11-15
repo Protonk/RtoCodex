@@ -41,23 +41,22 @@ Local environmental behavior and access is left for the agent (you) to determine
   - Make the purpose explicit in test names and messages (e.g., “container vs local: compilation of X”).
   - Document any assumptions about the universal container or local toolchain in comments near the relevant code.
 - If a test is failing, first decide whether the failure is part of the intended “experiment.” Only change behavior that is clearly unintended or explicitly requested.
-- Prefer automation via the shared harness scripts (matrix runner, container wrapper, automation targets) so every environment can rerun the same experiments with one command.
+- Prefer automation via the shared harness scripts (fuzz runner plus Make targets) so every environment can rerun the same experiments with one command.
 
-## Interpreting matrix runs
+## Interpreting fuzz runs
 
-- Run `make matrix` to exercise environment variable combinations; the harness prints the detected host profile and expected install/test outcomes for each combo before anything builds.
-- Each stage log line (`- install`, `- tests`) includes a relative artifact path such as `artifacts/matrix/USE_CPP20=1_USE_OPENMP=0/install.log`; open that file or scroll the console output—both contain the same information, so use whichever is easier in your environment.
-- After all combos complete, read the “Execution timeline” block or the CSV `artifacts/matrix/matrix_timeline_<timestamp>.csv` for the ordered list of stages, exit codes, and whether the result matched the heuristic expectation.
-- For a tabular snapshot, load `artifacts/matrix/matrix_summary_<timestamp>.csv`; it mirrors the console summary and treats build failures and test failures as first-class signals.
-- When failures differ from the printed expectations, capture the observation (and which combo/stage/log you inspected) in a test narrative so other agents can replay it without rerunning the matrix immediately.
+- Run `make fuzz-all` (or use the `make matrix` alias) to exercise every environment variable combination; the harness prints the detected host profile and expected install/test outcomes for each combo before anything builds.
+- Each stage log line (`- install`, `- tests`) includes a relative artifact path such as `artifacts/fuzz/run_20240101-120000/USE_CPP20=1_USE_OPENMP=0/install.log`; open that file or scroll the console output—both contain the same information, so use whichever is easier in your environment.
+- After the run completes, inspect `summary.csv` under the corresponding `artifacts/fuzz/run_<timestamp-id>/` directory for a tabular snapshot; `config.rds` stores the environment profile and runtime metadata for the same run.
+- When failures differ from the printed expectations, capture the observation (and which combo/stage/log you inspected) in an event narrative so other agents can replay it without rerunning the fuzz harness immediately.
 
-## Creating test narratives
+## Creating event narratives
 
-Sometimes failures occur due to a mix of user error, misconfiguration, and/or poor specification. If a failure is complex, only some of the solution can be captured by new tests or CI processes. This project contains narratives of these failures and solutions as `.md` files in the directory `test-narratives/`.
+Sometimes failures occur due to a mix of user error, misconfiguration, and/or poor specification. If a failure is complex, only some of the solution can be captured by new tests or CI processes. This project contains narratives of these failures and solutions as `.md` files in the directory `event-narratives/`.
 
-When you record a test or event narrative:
+When you record an event narrative:
 
-1. Create `test-narratives/event_MM_YY_ShortName.md` (month, year, one-word slug). Example: `event_11_25_Path.md`.
+1. Create `event-narratives/event_MM_YY_ShortName.md` (month, year, one-word slug). Example: `event_11_25_Path.md`.
 2. Begin with an HTML comment explaining the file, then add a title `# Event YYYY-MM-DD Short Title`.
 3. Provide three sections:
    - **Summary:** 2‑3 sentences describing what happened and why it mattered.

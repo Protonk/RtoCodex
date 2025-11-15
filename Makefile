@@ -1,11 +1,7 @@
 # RtoCodex automation targets: keep command names short so agents can rerun
-# matrix experiments (local + container) without memorizing long invocations.
-# Use `make matrix ARGS="--filter=USE_CPP20=1"` to forward flags to the
-# underlying scripts/run_matrix.R harness.
+# fuzz campaigns without memorizing long invocations. Pass `ARGS="..."` to
+# forward additional options directly to the harness scripts.
 
-MATRIX_SCRIPT := scripts/run_matrix.R
-MATRIX_LIB ?= build-lib/matrix
-MATRIX_ARTIFACTS ?= artifacts/matrix
 TEST_LIB ?= build-lib/unit
 FUZZ_SCRIPT := scripts/run_fuzz.R
 FUZZ_LIB ?= build-lib/fuzz
@@ -14,16 +10,15 @@ CAP_ARTIFACTS ?= artifacts/caps
 PROBE_DIR ?= probes
 PROBE_RUNNER ?= scripts/run_probes.R
 
-.PHONY: matrix matrix-container check clean-matrix fuzz fuzz-once fuzz-clean \
+.PHONY: fuzz-all matrix check fuzz fuzz-once fuzz-clean \
 	test \
 	cap_sysctl_kern_boottime cap_cxx20_flags cap_openmp_flags \
 	caps caps-summary
 
-matrix:
-	Rscript $(MATRIX_SCRIPT) --lib=$(MATRIX_LIB) --artifacts=$(MATRIX_ARTIFACTS) $(ARGS)
+fuzz-all:
+	Rscript $(FUZZ_SCRIPT) --lib=$(FUZZ_LIB) --artifacts=$(FUZZ_ARTIFACTS) --n=9999 $(ARGS)
 
-matrix-container:
-	./scripts/run_container_matrix.sh $(ARGS)
+matrix: fuzz-all
 
 test:
 	mkdir -p $(TEST_LIB)
@@ -32,9 +27,6 @@ test:
 
 check:
 	R CMD check --no-manual RtoCodex
-
-clean-matrix:
-	rm -rf $(MATRIX_LIB) $(MATRIX_ARTIFACTS)
 
 fuzz:
 	Rscript $(FUZZ_SCRIPT) --lib=$(FUZZ_LIB) --artifacts=$(FUZZ_ARTIFACTS) $(ARGS)
